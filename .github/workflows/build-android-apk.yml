@@ -37,11 +37,11 @@ jobs:
       - name: Generate Android project
         run: npx expo prebuild --platform android --non-interactive
 
+        
       - name: Build release APK
         working-directory: android
         run: |
           unset GRADLE_OPTS unset JAVA_OPTS cd android chmod +x gradlew ./gradlew :app:assembleRelease --no-daemon --stacktrace find app/build/outputs -type f -name "*.apk" -print
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -49,3 +49,13 @@ jobs:
           path: android/app/build/outputs/**/*.apk
           if-no-files-found: error
           retention-days: 14
+      
+      - name: List build outputs
+        if: always()
+        run: |
+          echo "All APK files:"
+          find . -type f -name "*.apk" -print || true
+          echo "Android outputs:"
+          find android/app/build -maxdepth 6 -type f 2>/dev/null | head -100 || true
+
+
