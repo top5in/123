@@ -15,3 +15,4 @@ export function HapticTab(props: BottomTabBarButtonProps) {
     />
   );
 }
+// Build dependency: haptic tab button
