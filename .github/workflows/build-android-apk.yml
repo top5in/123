@@ -35,7 +35,12 @@ jobs:
         continue-on-error: true
 
       - name: Generate Android project
-        run: npx expo prebuild --platform android --non-interactive
+        run: |
+          npx expo prebuild --platform android --non-interactive --clean
+          echo "Project files:"
+          ls -la
+          echo "Android folder:"
+          ls -la android
 
         
       - name: Build release APK
@@ -53,7 +58,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: monthly-planner-release-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: android/app/build/outputs/**/*.apk
           if-no-files-found: error
           retention-days: 14
       
