@@ -37,16 +37,16 @@ jobs:
       - name: Generate Android project
         run: npx expo prebuild --platform android --non-interactive
 
-      - name: Build debug APK
+      - name: Build release APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon --stacktrace find app/build/outputs -type f -name "*.apk" -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: monthly-planner-debug-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: monthly-planner-release-apk
+          path: android/app/build/outputs/**/*.apk
           if-no-files-found: error
           retention-days: 14
