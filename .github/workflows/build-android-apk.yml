@@ -40,8 +40,7 @@ jobs:
       - name: Build release APK
         working-directory: android
         run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace find app/build/outputs -type f -name "*.apk" -print
+          unset GRADLE_OPTS unset JAVA_OPTS cd android chmod +x gradlew ./gradlew :app:assembleRelease --no-daemon --stacktrace find app/build/outputs -type f -name "*.apk" -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
