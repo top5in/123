@@ -1,8 +1,8 @@
 import { Tabs } from "expo-router";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
-import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 
 export default function TabLayout() {
@@ -32,7 +32,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Месяц",
-          tabBarIcon: ({ color }) => <IconSymbol size={25} name="calendar" color={color} />,
+          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="calendar-month" color={color} />,
         }}
       />
     </Tabs>
