@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-android-apk:
-    name: Build Android APK
+    name: Build standalone Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -25,33 +25,28 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Install dependencies
-        run: npm install
-
-      - name: Check Expo project
-        run: npx expo-doctor
-        continue-on-error: true
+        run: npm ci
 
       - name: Generate Android project
-        run: |
-          npx expo prebuild --platform android --non-interactive --clean
-          test -d android
-          ls -la android
+        env:
+          NODE_ENV: production
+        run: npx expo prebuild --platform android --non-interactive
 
-      - name: Build release APK
+      - name: Build standalone release APK
+        working-directory: android
+        env:
+          NODE_ENV: production
         run: |
-          cd android
           chmod +x gradlew
-          ./gradlew :app:assembleRelease --no-daemon --stacktrace
-          find app/build/outputs -type f -name "*.apk" -print
+          ./gradlew :app:assembleRelease --no-daemon
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: monthly-planner-release-apk
-          path: android/app/build/outputs/**/*.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
