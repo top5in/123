@@ -35,6 +35,7 @@ jobs:
       - name: Remove optional development-only imports
         run: |
           sed -i '/@\/global\.css/d' 'app/_layout.tsx'
+          sed -i '/@\/lib\/_core\/nativewind-pressable/d' 'app/_layout.tsx'
           rm -f 'app/dev/theme-lab.tsx'
 
       - name: Generate Android project
