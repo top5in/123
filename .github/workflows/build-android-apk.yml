@@ -35,6 +35,7 @@ jobs:
       - name: Remove optional development-only imports
         run: |
           rm -f 'app/dev/theme-lab.tsx'
+          rm -f 'app/oauth/callback.tsx'
           cat > 'app/_layout.tsx' <<'EOF'
           import { Stack } from "expo-router";
           import { StatusBar } from "expo-status-bar";
@@ -49,7 +50,6 @@ jobs:
                 <SafeAreaProvider initialMetrics={initialWindowMetrics}>
                   <Stack screenOptions={{ headerShown: false }}>
                     <Stack.Screen name="(tabs)" />
-                    <Stack.Screen name="oauth/callback" />
                   </Stack>
                   <StatusBar style="auto" />
                 </SafeAreaProvider>
