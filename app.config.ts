@@ -4,14 +4,9 @@ import type { ExpoConfig } from "expo/config";
 const bundleId = "space.manus.monthly.planner";
 
 const config: ExpoConfig = {
-  name: "Ежедневник без хуйни",
+  name: "Ежежедневник",
   slug: "ezhednevnik-bez-huyni",
   version: "1.0.0",
-  extra: {
-    eas: {
-      projectId: "8ec79477-d1fb-4904-b16b-688d8c54ee30",
-    },
-  },
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: "manusezhednevnik",
