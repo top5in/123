@@ -34,10 +34,29 @@ jobs:
 
       - name: Remove optional development-only imports
         run: |
-          sed -i '/@\/global\.css/d' 'app/_layout.tsx'
-          sed -i '/@\/lib\/_core\/nativewind-pressable/d' 'app/_layout.tsx'
-          sed -i '/@\/lib\/theme-provider/d; s/<ThemeProvider>//g; s#</ThemeProvider>##g' 'app/_layout.tsx'
           rm -f 'app/dev/theme-lab.tsx'
+          cat > 'app/_layout.tsx' <<'EOF'
+          import { Stack } from "expo-router";
+          import { StatusBar } from "expo-status-bar";
+          import { GestureHandlerRootView } from "react-native-gesture-handler";
+          import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
+
+          export const unstable_settings = { anchor: "(tabs)" };
+
+          export default function RootLayout() {
+            return (
+              <GestureHandlerRootView style={{ flex: 1 }}>
+                <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+                  <Stack screenOptions={{ headerShown: false }}>
+                    <Stack.Screen name="(tabs)" />
+                    <Stack.Screen name="oauth/callback" />
+                  </Stack>
+                  <StatusBar style="auto" />
+                </SafeAreaProvider>
+              </GestureHandlerRootView>
+            );
+          }
+          EOF
 
       - name: Generate Android project
         env:
