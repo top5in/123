@@ -68,6 +68,18 @@ jobs:
           EOF
           test -f 'components/screen-container.tsx'
           echo 'screen-container.tsx created successfully'
+          mkdir -p 'hooks'
+          cat > 'hooks/use-colors.ts' <<'EOF'
+          export function useColors() {
+            return {
+              background: "#111111",
+              border: "#27272A",
+              foreground: "#F4F4F5",
+              muted: "#A1A1AA",
+              surface: "#18181B",
+            };
+          }
+          EOF
           sed -i '/@\/components\/screen-container/d' 'app/(tabs)/index.tsx'
           sed -i 's#<ScreenContainer containerClassName="bg-background" className="px-5">#<View className="flex-1 bg-background px-5">#' 'app/(tabs)/index.tsx'
           sed -i 's#</ScreenContainer>#</View>#' 'app/(tabs)/index.tsx'
