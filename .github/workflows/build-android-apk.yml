@@ -36,6 +36,36 @@ jobs:
         run: |
           rm -f 'app/dev/theme-lab.tsx'
           rm -f 'app/oauth/callback.tsx'
+          mkdir -p 'components'
+          cat > 'components/screen-container.tsx' <<'EOF'
+          import { View, type ViewProps } from "react-native";
+          import { SafeAreaView, type Edge } from "react-native-safe-area-context";
+
+          export interface ScreenContainerProps extends ViewProps {
+            edges?: Edge[];
+            className?: string;
+            containerClassName?: string;
+            safeAreaClassName?: string;
+          }
+
+          export function ScreenContainer({
+            children,
+            edges = ["top", "left", "right"],
+            className,
+            containerClassName,
+            safeAreaClassName,
+            style,
+            ...props
+          }: ScreenContainerProps) {
+            return (
+              <View className={`flex-1 bg-background ${containerClassName ?? ""}`} {...props}>
+                <SafeAreaView edges={edges} className={`flex-1 ${safeAreaClassName ?? ""}`} style={style}>
+                  <View className={`flex-1 ${className ?? ""}`}>{children}</View>
+                </SafeAreaView>
+              </View>
+            );
+          }
+          EOF
           cat > 'app/_layout.tsx' <<'EOF'
           import { Stack } from "expo-router";
           import { StatusBar } from "expo-status-bar";
