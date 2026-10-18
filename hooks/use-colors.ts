@@ -1,12 +1,11 @@
-import { Colors, type ColorScheme, type ThemeColorPalette } from "@/constants/theme";
-import { useColorScheme } from "./use-color-scheme";
-
-/**
- * Returns the current theme's color palette.
- * Usage: const colors = useColors(); then colors.text, colors.background, etc.
- */
-export function useColors(colorSchemeOverride?: ColorScheme): ThemeColorPalette {
-  const colorSchema = useColorScheme();
-  const scheme = (colorSchemeOverride ?? colorSchema ?? "light") as ColorScheme;
-  return Colors[scheme];
+export function useColors() {
+  return {
+    primary: "#A3E635",
+    background: "#111111",
+    border: "#27272A",
+    foreground: "#F4F4F5",
+    muted: "#A1A1AA",
+    surface: "#18181B",
+    icon: "#A1A1AA",
+  };
 }
