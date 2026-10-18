@@ -66,6 +66,8 @@ jobs:
             );
           }
           EOF
+          test -f 'components/screen-container.tsx'
+          echo 'screen-container.tsx created successfully'
           cat > 'app/_layout.tsx' <<'EOF'
           import { Stack } from "expo-router";
           import { StatusBar } from "expo-status-bar";
