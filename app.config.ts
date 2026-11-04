@@ -46,6 +46,7 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    "./plugins/with-task-alarm",
     [
       "expo-notifications",
       {
