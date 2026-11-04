@@ -4,6 +4,7 @@ import * as Notifications from "expo-notifications";
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  AppState,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -98,7 +99,7 @@ async function scheduleReminder(task: PlannerTask) {
       let allowed = await TaskAlarm.canScheduleExactAlarms();
       if (!allowed) {
         await TaskAlarm.requestExactAlarmPermission();
-        Alert.alert("Разрешите точные будильники", "Android открыл настройки специального доступа. После выдачи разрешения откройте задачу, включите «Будильник в это время» и сохраните её ещё раз.");
+        Alert.alert("Разрешите точные будильники", "Android открыл настройки специального доступа. Разрешите будильники и вернитесь в приложение — задача будет автоматически назначена.");
         return undefined;
       }
       allowed = await TaskAlarm.canScheduleExactAlarms();
@@ -127,6 +128,42 @@ async function scheduleReminder(task: PlannerTask) {
   } catch {
     return undefined;
   }
+}
+
+async function reschedulePendingAndroidAlarms() {
+  if (Platform.OS !== "android" || !TaskAlarm) return undefined;
+  const notificationPermission = await Notifications.getPermissionsAsync().catch(() => ({ status: "denied" as const }));
+  if (notificationPermission.status !== "granted") return undefined;
+  const exactAlarmAllowed = await TaskAlarm.canScheduleExactAlarms().catch(() => false);
+  if (!exactAlarmAllowed) return undefined;
+
+  const stored = await AsyncStorage.getItem(TASKS_STORAGE_KEY).catch(() => null);
+  if (!stored) return undefined;
+  let savedTasks: PlannerTask[];
+  try {
+    savedTasks = JSON.parse(stored) as PlannerTask[];
+  } catch {
+    return undefined;
+  }
+
+  let changed = false;
+  const updatedTasks = await Promise.all(savedTasks.map(async (task) => {
+    if (!task.reminder || task.done || task.notificationId || isPastDateTime(task.date, task.time)) return task;
+    const [hour, minute] = task.time.split(":").map(Number);
+    const target = parseDateKey(task.date);
+    target.setHours(hour, minute, 0, 0);
+    try {
+      const notificationId = await TaskAlarm.schedule(task.id, task.title, target.getTime());
+      changed = true;
+      return { ...task, notificationId };
+    } catch {
+      return task;
+    }
+  }));
+
+  if (!changed) return undefined;
+  await AsyncStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(updatedTasks));
+  return updatedTasks;
 }
 
 export default function HomeScreen() {
@@ -186,6 +223,32 @@ export default function HomeScreen() {
     }, 60_000);
     return () => clearInterval(timer);
   }, [isLoading, tasks.length]);
+
+  useEffect(() => {
+    if (isLoading || Platform.OS !== "android" || !TaskAlarm) return;
+    let active = true;
+    let syncing = false;
+    const syncPendingAlarms = async () => {
+      if (syncing) return;
+      syncing = true;
+      try {
+        const updatedTasks = await reschedulePendingAndroidAlarms();
+        if (active && updatedTasks) setTasks(updatedTasks);
+      } catch {
+        // Keep the saved task; a later app activation can retry scheduling.
+      } finally {
+        syncing = false;
+      }
+    };
+    void syncPendingAlarms();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void syncPendingAlarms();
+    });
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, [isLoading, tasks]);
 
   const persistTasks = async (nextTasks: PlannerTask[]) => {
     setTasks(nextTasks);
@@ -271,7 +334,7 @@ export default function HomeScreen() {
       const allowed = await configureNotifications();
       if (allowed) {
         nextTask.notificationId = await scheduleReminder(nextTask);
-        if (!nextTask.notificationId) nextTask.reminder = false;
+        if (!nextTask.notificationId && (Platform.OS !== "android" || !TaskAlarm)) nextTask.reminder = false;
       } else {
         nextTask.reminder = false;
         Alert.alert("Разрешите уведомления", "Без разрешения приложение не сможет показать кнопку «Стоп» для звонящего будильника.");
@@ -347,7 +410,7 @@ export default function HomeScreen() {
       const allowed = await configureNotifications();
       if (allowed) {
         movedTask.notificationId = await scheduleReminder(movedTask);
-        if (!movedTask.notificationId) movedTask.reminder = false;
+        if (!movedTask.notificationId && (Platform.OS !== "android" || !TaskAlarm)) movedTask.reminder = false;
       } else {
         movedTask.reminder = false;
       }
@@ -387,6 +450,7 @@ export default function HomeScreen() {
           </View>
           <FlatList
             data={calendarDays}
+            extraData={selectedDate}
             numColumns={7}
             scrollEnabled={false}
             keyExtractor={(item) => item.date}
@@ -405,17 +469,18 @@ export default function HomeScreen() {
                   }}
                   style={({ pressed }) => [
                     styles.dayCell,
-                    selected && { backgroundColor: ACCENT, borderColor: ACCENT },
                     pressed && styles.pressed,
                   ]}
                 >
-                  <Text style={[
-                    styles.dayText,
-                    { color: item.currentMonth ? colors.foreground : colors.muted },
-                    selected && styles.selectedDayText,
-                    item.isToday && !selected && { color: ACCENT, fontWeight: "800" },
-                  ]}>{item.day}</Text>
-                  {dayHasTasks && <View style={[styles.taskDot, { backgroundColor: selected ? "#FFFFFF" : ACCENT }]} />}
+                  <View style={[styles.dayMark, selected && styles.selectedDayMark]}>
+                    <Text style={[
+                      styles.dayText,
+                      { color: item.currentMonth ? colors.foreground : colors.muted },
+                      selected && styles.selectedDayText,
+                      item.isToday && !selected && { color: ACCENT, fontWeight: "800" },
+                    ]}>{item.day}</Text>
+                    {dayHasTasks && <View style={[styles.taskDot, { backgroundColor: selected ? "#FFFFFF" : ACCENT }]} />}
+                  </View>
                 </Pressable>
               );
             }}
@@ -647,7 +712,9 @@ const styles = StyleSheet.create({
   weekRow: { flexDirection: "row", marginBottom: 9 },
   weekLabel: { flex: 1, textAlign: "center", fontSize: 13, fontWeight: "800" },
   calendarRow: { justifyContent: "space-around" },
-  dayCell: { width: "14.28%", height: 52, alignItems: "center", justifyContent: "center", borderRadius: 17, borderWidth: 1.5, borderColor: "transparent", position: "relative" },
+  dayCell: { width: "14.28%", height: 52, alignItems: "center", justifyContent: "center" },
+  dayMark: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", position: "relative" },
+  selectedDayMark: { backgroundColor: ACCENT, borderWidth: 2, borderColor: "#B74831", elevation: 4 },
   dayText: { fontSize: 20, fontWeight: "700", lineHeight: 26, fontVariant: ["tabular-nums"] },
   selectedDayText: { color: "#FFFFFF", fontWeight: "800" },
   taskDot: { width: 5, height: 5, borderRadius: 3, position: "absolute", bottom: 5 },
