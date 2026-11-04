@@ -7,6 +7,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Modal,
+  NativeModules,
   Platform,
   Pressable,
   ScrollView,
@@ -46,6 +47,12 @@ const TASKS_STORAGE_KEY = "daily-planner-tasks-v1";
 const WEEK_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const ACCENT = "#E36B4E";
 const GREEN = "#26856B";
+const TaskAlarm = NativeModules.TaskAlarm as {
+  canScheduleExactAlarms(): Promise<boolean>;
+  requestExactAlarmPermission(): Promise<boolean>;
+  schedule(id: string, title: string, timestamp: number): Promise<string>;
+  cancel(id: string): Promise<void>;
+} | undefined;
 
 function formatMonth(date: Date) {
   const label = date.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
@@ -62,22 +69,20 @@ function formatSelectedDate(key: string) {
 }
 
 async function configureNotifications() {
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("planner-alarm-reminders", {
-      name: "Будильник ежедневника",
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 250, 200, 250],
-      lightColor: ACCENT,
-      sound: "default",
-      enableVibrate: true,
-      showBadge: true,
-    });
-  }
-
   const current = await Notifications.getPermissionsAsync();
   if (current.status === "granted") return true;
   const requested = await Notifications.requestPermissionsAsync();
   return requested.status === "granted";
+}
+
+async function cancelReminder(id: string) {
+  if (Platform.OS === "android") {
+    await TaskAlarm?.cancel(id).catch(() => undefined);
+    // Also clear identifiers created by the previous expo-notifications Android implementation.
+    await Notifications.cancelScheduledNotificationAsync(id).catch(() => undefined);
+  } else if (Platform.OS === "ios") {
+    await Notifications.cancelScheduledNotificationAsync(id).catch(() => undefined);
+  }
 }
 
 async function scheduleReminder(task: PlannerTask) {
@@ -87,6 +92,23 @@ async function scheduleReminder(task: PlannerTask) {
   triggerDate.setHours(hour, minute, 0, 0);
   if (triggerDate.getTime() <= Date.now()) return undefined;
 
+  if (Platform.OS === "android") {
+    if (!TaskAlarm) return undefined;
+    try {
+      let allowed = await TaskAlarm.canScheduleExactAlarms();
+      if (!allowed) {
+        await TaskAlarm.requestExactAlarmPermission();
+        Alert.alert("Разрешите точные будильники", "Android открыл настройки специального доступа. После выдачи разрешения откройте задачу, включите «Будильник в это время» и сохраните её ещё раз.");
+        return undefined;
+      }
+      allowed = await TaskAlarm.canScheduleExactAlarms();
+      if (!allowed) return undefined;
+      return await TaskAlarm.schedule(task.id, task.title, triggerDate.getTime());
+    } catch (error) {
+      Alert.alert("Будильник не установлен", error instanceof Error ? error.message : "Не удалось поставить точный будильник.");
+      return undefined;
+    }
+  }
   try {
     return await Notifications.scheduleNotificationAsync({
       content: {
@@ -243,11 +265,17 @@ export default function HomeScreen() {
 
     const previousTask = editingTaskId ? tasks.find((task) => task.id === editingTaskId) : undefined;
     if (previousTask?.notificationId) {
-      await Notifications.cancelScheduledNotificationAsync(previousTask.notificationId).catch(() => undefined);
+      await cancelReminder(previousTask.notificationId);
     }
     if (reminder && Platform.OS !== "web") {
       const allowed = await configureNotifications();
-      if (allowed) nextTask.notificationId = await scheduleReminder(nextTask);
+      if (allowed) {
+        nextTask.notificationId = await scheduleReminder(nextTask);
+        if (!nextTask.notificationId) nextTask.reminder = false;
+      } else {
+        nextTask.reminder = false;
+        Alert.alert("Разрешите уведомления", "Без разрешения приложение не сможет показать кнопку «Стоп» для звонящего будильника.");
+      }
     }
 
     const nextTasks = editingTaskId
@@ -262,7 +290,7 @@ export default function HomeScreen() {
   const toggleTask = async (task: PlannerTask) => {
     const nextDone = !task.done;
     if (nextDone && task.notificationId) {
-      await Notifications.cancelScheduledNotificationAsync(task.notificationId).catch(() => undefined);
+      await cancelReminder(task.notificationId);
     }
     const nextTasks = tasks.map((item) => item.id === task.id ? { ...item, done: nextDone } : item);
     await persistTasks(nextTasks);
@@ -271,7 +299,7 @@ export default function HomeScreen() {
 
   const deleteTask = async (task: PlannerTask) => {
     if (task.notificationId) {
-      await Notifications.cancelScheduledNotificationAsync(task.notificationId).catch(() => undefined);
+      await cancelReminder(task.notificationId);
     }
     await persistTasks(removeTaskById(tasks, task.id));
     setActionTask(null);
@@ -310,14 +338,19 @@ export default function HomeScreen() {
 
   const moveTaskToTomorrow = async (task: PlannerTask) => {
     if (task.notificationId) {
-      await Notifications.cancelScheduledNotificationAsync(task.notificationId).catch(() => undefined);
+      await cancelReminder(task.notificationId);
     }
     const tomorrow = parseDateKey(task.date);
     tomorrow.setDate(tomorrow.getDate() + 1);
     const movedTask: PlannerTask = { ...task, date: dateKey(tomorrow), done: false, notificationId: undefined };
     if (Platform.OS !== "web" && !isPastDateTime(movedTask.date, movedTask.time)) {
       const allowed = await configureNotifications();
-      if (allowed) movedTask.notificationId = await scheduleReminder(movedTask);
+      if (allowed) {
+        movedTask.notificationId = await scheduleReminder(movedTask);
+        if (!movedTask.notificationId) movedTask.reminder = false;
+      } else {
+        movedTask.reminder = false;
+      }
     }
     await persistTasks(tasks.map((item) => item.id === task.id ? movedTask : item));
     setActionTask(null);
@@ -363,10 +396,16 @@ export default function HomeScreen() {
               const dayHasTasks = tasks.some((task) => task.date === item.date && !task.done);
               return (
                 <Pressable
-                  onPress={() => setSelectedDate(item.date)}
+                  accessibilityRole="button"
+                  accessibilityLabel={parseDateKey(item.date).toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" })}
+                  accessibilityState={{ selected }}
+                  onPress={() => {
+                    setSelectedDate(item.date);
+                    void Haptics.selectionAsync().catch(() => undefined);
+                  }}
                   style={({ pressed }) => [
                     styles.dayCell,
-                    selected && { backgroundColor: ACCENT },
+                    selected && { backgroundColor: ACCENT, borderColor: ACCENT },
                     pressed && styles.pressed,
                   ]}
                 >
@@ -601,17 +640,17 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 11, fontWeight: "800", letterSpacing: 1.5, marginBottom: 5 },
   title: { fontSize: 31, lineHeight: 38, fontWeight: "800", letterSpacing: -0.7 },
   addHeaderButton: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center", shadowColor: ACCENT, shadowOpacity: 0.2, shadowRadius: 9, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
-  monthCard: { borderRadius: 24, borderWidth: 1, paddingHorizontal: 15, paddingTop: 14, paddingBottom: 13, marginBottom: 26 },
-  monthHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 18 },
-  monthTitle: { fontSize: 17, fontWeight: "800" },
-  iconButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 12 },
-  weekRow: { flexDirection: "row", marginBottom: 7 },
-  weekLabel: { flex: 1, textAlign: "center", fontSize: 11, fontWeight: "700" },
+  monthCard: { borderRadius: 26, borderWidth: 1, paddingHorizontal: 12, paddingTop: 18, paddingBottom: 17, marginBottom: 22 },
+  monthHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
+  monthTitle: { fontSize: 20, fontWeight: "800" },
+  iconButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 15 },
+  weekRow: { flexDirection: "row", marginBottom: 9 },
+  weekLabel: { flex: 1, textAlign: "center", fontSize: 13, fontWeight: "800" },
   calendarRow: { justifyContent: "space-around" },
-  dayCell: { width: "14.28%", height: 39, alignItems: "center", justifyContent: "center", borderRadius: 13, position: "relative" },
-  dayText: { fontSize: 14, fontWeight: "600", lineHeight: 19 },
+  dayCell: { width: "14.28%", height: 52, alignItems: "center", justifyContent: "center", borderRadius: 17, borderWidth: 1.5, borderColor: "transparent", position: "relative" },
+  dayText: { fontSize: 20, fontWeight: "700", lineHeight: 26, fontVariant: ["tabular-nums"] },
   selectedDayText: { color: "#FFFFFF", fontWeight: "800" },
-  taskDot: { width: 4, height: 4, borderRadius: 2, position: "absolute", bottom: 5 },
+  taskDot: { width: 5, height: 5, borderRadius: 3, position: "absolute", bottom: 5 },
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 13 },
   sectionTitle: { fontSize: 18, fontWeight: "800", marginBottom: 3 },
   sectionSubtitle: { fontSize: 12, lineHeight: 17 },
