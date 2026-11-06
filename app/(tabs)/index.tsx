@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import * as Notifications from "expo-notifications";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AppState,
@@ -166,6 +166,77 @@ async function reschedulePendingAndroidAlarms() {
   return updatedTasks;
 }
 
+const WHEEL_ROW_HEIGHT = 50;
+const WHEEL_VISIBLE_ROWS = 5;
+
+function TimeWheel({
+  values,
+  selectedValue,
+  onValueChange,
+  muted,
+  border,
+  accent,
+}: {
+  values: number[];
+  selectedValue: number;
+  onValueChange: (value: number) => void;
+  muted: string;
+  border: string;
+  accent: string;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const currentIndex = useRef(selectedValue);
+  const ready = useRef(false);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ y: selectedValue * WHEEL_ROW_HEIGHT, animated: false });
+      ready.current = true;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  return (
+    <View style={styles.wheelFrame}>
+      <ScrollView
+        ref={scrollRef}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+        snapToInterval={WHEEL_ROW_HEIGHT}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        scrollEventThrottle={16}
+        contentContainerStyle={styles.wheelContent}
+        onScroll={(event) => {
+          if (!ready.current) return;
+          const index = Math.max(0, Math.min(values.length - 1, Math.round(event.nativeEvent.contentOffset.y / WHEEL_ROW_HEIGHT)));
+          if (index !== currentIndex.current) {
+            currentIndex.current = index;
+            onValueChange(values[index]);
+          }
+        }}
+      >
+        {values.map((value, index) => (
+          <Pressable
+            key={value}
+            accessibilityRole="button"
+            accessibilityLabel={String(value).padStart(2, "0")}
+            onPress={() => scrollRef.current?.scrollTo({ y: index * WHEEL_ROW_HEIGHT, animated: true })}
+            style={styles.wheelItem}
+          >
+            <Text style={[
+              styles.wheelNumber,
+              { color: value === selectedValue ? accent : muted, opacity: Math.abs(index - selectedValue) > 1 ? 0.5 : 0.8 },
+              value === selectedValue && { fontWeight: "900" },
+            ]}>{String(value).padStart(2, "0")}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <View pointerEvents="none" style={[styles.wheelSelectionBand, { borderColor: border }]} />
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const colors = useColors();
   const today = useMemo(() => new Date(), []);
@@ -177,6 +248,7 @@ export default function HomeScreen() {
   const [actionTask, setActionTask] = useState<PlannerTask | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [timePickerSession, setTimePickerSession] = useState(0);
   const [pickerHour, setPickerHour] = useState(9);
   const [pickerMinutes, setPickerMinutes] = useState("00");
   const [title, setTitle] = useState("");
@@ -282,6 +354,7 @@ export default function HomeScreen() {
     const [hour, minute] = time.split(":").map(Number);
     setPickerHour(Number.isFinite(hour) ? hour : 9);
     setPickerMinutes(Number.isFinite(minute) ? pad(minute) : "00");
+    setTimePickerSession((session) => session + 1);
     setShowComposer(false);
     setShowTimePicker(true);
   };
@@ -609,26 +682,40 @@ export default function HomeScreen() {
             <View style={styles.sheetHeader}>
               <View>
                 <Text style={[styles.sheetEyebrow, { color: ACCENT }]}>ВРЕМЯ ДЕЛА</Text>
-                <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Выберите час</Text>
+                <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Выберите время</Text>
               </View>
               <Pressable onPress={closeTimePicker} style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}>
                 <MaterialIcons name="close" size={22} color={colors.muted} />
               </Pressable>
             </View>
-            <View style={styles.hourGrid}>
-              {Array.from({ length: 24 }, (_, hour) => (
-                <Pressable key={hour} onPress={() => setPickerHour(hour)} style={({ pressed }) => [styles.hourCell, { backgroundColor: pickerHour === hour ? ACCENT : colors.surface, borderColor: pickerHour === hour ? ACCENT : colors.border }, pressed && styles.pressed]}>
-                  <Text style={[styles.hourText, { color: pickerHour === hour ? "#FFFFFF" : colors.foreground }]}>{pad(hour)}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <View style={styles.minuteRow}>
-              <View style={styles.minuteCopy}>
-                <MaterialIcons name="more-time" size={21} color={ACCENT} />
-                <View><Text style={[styles.reminderTitle, { color: colors.foreground }]}>Минуты</Text><Text style={[styles.reminderSubtext, { color: colors.muted }]}>Введите вручную</Text></View>
+            <View style={styles.wheelsRow}>
+              <View style={styles.wheelColumn}>
+                <Text style={[styles.wheelLabel, { color: colors.muted }]}>ЧАСЫ</Text>
+                <TimeWheel
+                  key={`hours-${timePickerSession}`}
+                  values={Array.from({ length: 24 }, (_, hour) => hour)}
+                  selectedValue={pickerHour}
+                  onValueChange={setPickerHour}
+                  muted={colors.muted}
+                  border={ACCENT}
+                  accent={ACCENT}
+                />
               </View>
-              <TextInput value={pickerMinutes} onChangeText={setPickerMinutes} keyboardType="number-pad" maxLength={2} placeholder="00" placeholderTextColor={colors.muted} style={[styles.minuteInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.surface }]} />
+              <Text style={[styles.wheelColon, { color: ACCENT }]}>:</Text>
+              <View style={styles.wheelColumn}>
+                <Text style={[styles.wheelLabel, { color: colors.muted }]}>МИНУТЫ</Text>
+                <TimeWheel
+                  key={`minutes-${timePickerSession}`}
+                  values={Array.from({ length: 60 }, (_, minute) => minute)}
+                  selectedValue={Number(pickerMinutes) || 0}
+                  onValueChange={(minute) => setPickerMinutes(pad(minute))}
+                  muted={colors.muted}
+                  border={ACCENT}
+                  accent={ACCENT}
+                />
+              </View>
             </View>
+            <Text style={[styles.wheelHint, { color: colors.muted }]}>Прокрутите колёса вверх или вниз</Text>
             <Pressable onPress={applyTime} style={({ pressed }) => [styles.saveButton, { backgroundColor: ACCENT }, pressed && styles.pressed]}>
               <MaterialIcons name="check" size={20} color="#FFFFFF" />
               <Text style={styles.saveButtonText}>Выбрать {pad(pickerHour)}:{pickerMinutes || "00"}</Text>
@@ -764,12 +851,16 @@ const styles = StyleSheet.create({
   timeInputWrap: { height: 52, borderWidth: 1, borderRadius: 15, paddingHorizontal: 13, flexDirection: "row", alignItems: "center" },
   timeInput: { flex: 1, fontSize: 15, fontWeight: "700", marginLeft: 8 },
   timeSheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 21, paddingTop: 10, paddingBottom: 24 },
-  hourGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 18 },
-  hourCell: { width: "22.5%", height: 44, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  hourText: { fontSize: 15, lineHeight: 20, fontWeight: "900", textAlign: "center" },
-  minuteRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 18 },
-  minuteCopy: { flexDirection: "row", alignItems: "center", gap: 9 },
-  minuteInput: { width: 64, height: 48, borderWidth: 1, borderRadius: 14, textAlign: "center", fontSize: 18, fontWeight: "800" },
+  wheelsRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 2 },
+  wheelColumn: { alignItems: "center", flex: 1 },
+  wheelLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 1.6, marginBottom: 8 },
+  wheelFrame: { height: WHEEL_ROW_HEIGHT * WHEEL_VISIBLE_ROWS, width: "100%", overflow: "hidden", position: "relative" },
+  wheelContent: { paddingVertical: WHEEL_ROW_HEIGHT * 2 },
+  wheelItem: { height: WHEEL_ROW_HEIGHT, alignItems: "center", justifyContent: "center" },
+  wheelNumber: { fontSize: 28, lineHeight: 36, fontWeight: "600", fontVariant: ["tabular-nums"] },
+  wheelSelectionBand: { position: "absolute", top: WHEEL_ROW_HEIGHT * 2, left: 3, right: 3, height: WHEEL_ROW_HEIGHT, borderTopWidth: 1, borderBottomWidth: 1, borderRadius: 13, backgroundColor: "rgba(227,107,78,0.10)" },
+  wheelColon: { fontSize: 34, fontWeight: "900", marginTop: 22 },
+  wheelHint: { fontSize: 11, textAlign: "center", marginTop: 6, marginBottom: 14 },
   datePill: { height: 52, borderRadius: 15, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 7 },
   datePillText: { fontSize: 13, fontWeight: "800" },
   reminderToggle: { borderWidth: 1, borderRadius: 17, padding: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 19 },
