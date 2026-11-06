@@ -69,6 +69,15 @@ function formatSelectedDate(key: string) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
+function formatTaskCount(count: number) {
+  const lastTwo = count % 100;
+  const last = count % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return `${count} дел`;
+  if (last === 1) return `${count} дело`;
+  if (last >= 2 && last <= 4) return `${count} дела`;
+  return `${count} дел`;
+}
+
 async function configureNotifications() {
   const current = await Notifications.getPermissionsAsync();
   if (current.status === "granted") return true;
@@ -337,11 +346,6 @@ export default function HomeScreen() {
     [selectedDate, tasks],
   );
 
-  const monthTaskCount = useMemo(
-    () => tasks.filter((task) => task.date.startsWith(`${visibleMonth.getFullYear()}-${pad(visibleMonth.getMonth() + 1)}`)).length,
-    [tasks, visibleMonth],
-  );
-
   const openComposer = (task?: PlannerTask) => {
     setEditingTaskId(task?.id ?? null);
     setTitle(task?.title ?? "");
@@ -563,10 +567,10 @@ export default function HomeScreen() {
         <View style={styles.sectionHeader}>
           <View>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>{formatSelectedDate(selectedDate)}</Text>
-            <Text style={[styles.sectionSubtitle, { color: colors.muted }]}>Выберите день и добавьте дела</Text>
+            <Text style={[styles.sectionSubtitle, { color: colors.muted }]}>Список дел на выбранную дату</Text>
           </View>
           <View style={[styles.countBadge, { backgroundColor: "#FCE8E1" }]}>
-            <Text style={[styles.countText, { color: ACCENT }]}>{monthTaskCount} в месяце</Text>
+            <Text style={[styles.countText, { color: ACCENT }]}>{formatTaskCount(selectedTasks.length)}</Text>
           </View>
         </View>
 
@@ -601,22 +605,35 @@ export default function HomeScreen() {
             }
             renderItem={({ item }) => (
               <Pressable
-                onLongPress={() => removeTask(item)}
+                onLongPress={() => setActionTask(item)}
                 style={({ pressed }) => [styles.taskCard, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && styles.pressed]}
               >
-                <Pressable onPress={() => toggleTask(item)} style={styles.checkButton}>
-                  <View style={[styles.checkbox, { borderColor: item.done ? GREEN : colors.border }, item.done && { backgroundColor: GREEN }]}>
-                    {item.done && <MaterialIcons name="check" size={15} color="#FFFFFF" />}
-                  </View>
-                </Pressable>
                 <View style={styles.taskMain}>
                   <Text style={[styles.taskTime, { color: ACCENT }]}>{item.time}</Text>
                   <Text style={[styles.taskTitle, { color: colors.foreground }, item.done && styles.doneText]}>{item.title}</Text>
                   {item.reminder && !item.done && <View style={styles.reminderLine}><MaterialIcons name="notifications-none" size={14} color={colors.muted} /><Text style={[styles.reminderText, { color: colors.muted }]}>Будильник включён</Text></View>}
                 </View>
-                <Pressable onPress={() => setActionTask(item)} style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}>
-                  <MaterialIcons name="more-horiz" size={22} color={colors.muted} />
-                </Pressable>
+                <View style={styles.taskActions}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={item.done ? `Снять отметку: ${item.title}` : `Отметить выполненным: ${item.title}`}
+                    accessibilityState={{ checked: item.done }}
+                    onPress={() => toggleTask(item)}
+                    style={({ pressed }) => [styles.checkButton, { backgroundColor: item.done ? "#E9F3EE" : colors.background, borderColor: colors.border }, pressed && styles.pressed]}
+                  >
+                    <View style={[styles.checkbox, { borderColor: item.done ? GREEN : colors.border }, item.done && { backgroundColor: GREEN }]}>
+                      {item.done && <MaterialIcons name="check" size={17} color="#FFFFFF" />}
+                    </View>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Действия для дела: ${item.title}`}
+                    onPress={() => setActionTask(item)}
+                    style={({ pressed }) => [styles.deleteButton, { backgroundColor: colors.background, borderColor: colors.border }, pressed && styles.pressed]}
+                  >
+                    <MaterialIcons name="more-horiz" size={26} color={colors.muted} />
+                  </Pressable>
+                </View>
               </Pressable>
             )}
           />
@@ -810,25 +827,26 @@ const styles = StyleSheet.create({
   sectionSubtitle: { fontSize: 12, lineHeight: 17 },
   countBadge: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7 },
   countText: { fontSize: 11, fontWeight: "800" },
-  addAnotherButton: { alignSelf: "flex-start", borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 12 },
-  addAnotherText: { fontSize: 12, fontWeight: "800" },
+  addAnotherButton: { alignSelf: "flex-start", minHeight: 48, borderWidth: 1, borderRadius: 15, paddingHorizontal: 16, paddingVertical: 11, flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
+  addAnotherText: { fontSize: 14, fontWeight: "800" },
   emptyList: { minHeight: 220 },
   emptyState: { alignItems: "center", justifyContent: "center", paddingVertical: 30 },
   emptyIcon: { width: 62, height: 62, borderRadius: 21, alignItems: "center", justifyContent: "center", marginBottom: 14 },
   emptyTitle: { fontSize: 17, fontWeight: "800", marginBottom: 5 },
   emptyText: { fontSize: 13, lineHeight: 19, textAlign: "center", marginBottom: 16 },
-  emptyButton: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 15, paddingVertical: 10 },
-  emptyButtonText: { fontSize: 13, fontWeight: "800" },
-  taskCard: { minHeight: 76, borderRadius: 18, borderWidth: 1, marginBottom: 10, padding: 13, flexDirection: "row", alignItems: "center" },
-  checkButton: { paddingRight: 12, paddingVertical: 8 },
-  checkbox: { width: 24, height: 24, borderRadius: 8, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
-  taskMain: { flex: 1 },
-  taskTime: { fontSize: 11, fontWeight: "800", marginBottom: 3 },
-  taskTitle: { fontSize: 15, lineHeight: 20, fontWeight: "700" },
+  emptyButton: { minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 18, paddingVertical: 12, alignItems: "center", justifyContent: "center" },
+  emptyButtonText: { fontSize: 14, fontWeight: "800" },
+  taskCard: { minHeight: 92, borderRadius: 20, borderWidth: 1, marginBottom: 12, paddingVertical: 15, paddingHorizontal: 16, gap: 12, flexDirection: "row", alignItems: "center" },
+  taskMain: { flex: 1, minWidth: 0 },
+  taskActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  checkButton: { width: 50, height: 50, borderRadius: 16, borderWidth: 1, borderColor: "#E4E6E5", alignItems: "center", justifyContent: "center" },
+  checkbox: { width: 30, height: 30, borderRadius: 10, borderWidth: 2, alignItems: "center", justifyContent: "center" },
+  taskTime: { fontSize: 13, fontWeight: "900", marginBottom: 4 },
+  taskTitle: { fontSize: 16, lineHeight: 22, fontWeight: "800" },
   doneText: { textDecorationLine: "line-through", opacity: 0.5 },
   reminderLine: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 5 },
   reminderText: { fontSize: 11 },
-  deleteButton: { width: 30, height: 34, alignItems: "center", justifyContent: "center" },
+  deleteButton: { width: 50, height: 50, borderRadius: 16, borderWidth: 1, borderColor: "#E4E6E5", alignItems: "center", justifyContent: "center" },
   tipCard: { marginTop: 19, borderRadius: 18, padding: 14, flexDirection: "row", alignItems: "center" },
   tipIcon: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", marginRight: 11 },
   tipCopy: { flex: 1 },
@@ -842,7 +860,7 @@ const styles = StyleSheet.create({
   sheetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 22 },
   sheetEyebrow: { fontSize: 10, fontWeight: "800", letterSpacing: 1.4, marginBottom: 4 },
   sheetTitle: { fontSize: 24, lineHeight: 30, fontWeight: "800" },
-  closeButton: { width: 36, height: 36, borderRadius: 13, backgroundColor: "#F1F2F2", alignItems: "center", justifyContent: "center" },
+  closeButton: { width: 44, height: 44, borderRadius: 15, backgroundColor: "#F1F2F2", alignItems: "center", justifyContent: "center" },
   inputLabel: { fontSize: 10, fontWeight: "800", letterSpacing: 1.1, marginBottom: 8 },
   textInput: { height: 52, borderWidth: 1, borderRadius: 15, paddingHorizontal: 15, fontSize: 15, marginBottom: 18 },
   formRow: { flexDirection: "row", gap: 12, marginBottom: 18 },
@@ -876,8 +894,8 @@ const styles = StyleSheet.create({
   actionMenuTitleRow: { flexDirection: "row", alignItems: "center", marginBottom: 17 },
   actionMenuEyebrow: { fontSize: 10, fontWeight: "800", letterSpacing: 1.3, marginBottom: 4 },
   actionMenuTitle: { fontSize: 19, fontWeight: "800" },
-  actionRow: { flexDirection: "row", alignItems: "center", paddingVertical: 11, gap: 12 },
-  actionIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  actionTitle: { fontSize: 14, fontWeight: "800", marginBottom: 3 },
-  actionSubtitle: { fontSize: 11 },
+  actionRow: { minHeight: 68, flexDirection: "row", alignItems: "center", paddingVertical: 12, gap: 14 },
+  actionIcon: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  actionTitle: { fontSize: 15, fontWeight: "800", marginBottom: 4 },
+  actionSubtitle: { fontSize: 12 },
 });
